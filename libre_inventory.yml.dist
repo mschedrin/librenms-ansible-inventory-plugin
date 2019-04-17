@@ -1,0 +1,17 @@
+---
+# Example command line: ansible-inventory -v --list -i libre_inventory.yml
+# remember to export env variable LIBRENMS_TOKEN: export LIBRENMS_TOKEN=abc
+plugin: librenms
+api_endpoint: https://librenms-host.local/api/v0
+api_token: you can fill your token here, but you should rather use environment variable LIBRENMS_TOKEN
+validate_certs: True
+cache: True # use ansible cache for inventory
+cache_plugin: pickle # pickle cache works fastest
+cache_connection: /tmp/ # where to put cache files
+cache_timeout: 600 #seconds
+timeout: 15 # api timeout
+#exclude_disabled: False # exclude disabled hosts
+#regex_ignore_case: False
+group_name_regex_filter:
+  - ^group name1$
+  - ^group name2$
