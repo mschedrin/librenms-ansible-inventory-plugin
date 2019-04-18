@@ -20,10 +20,10 @@ Test that inventory works: `ansible-inventory -v --list -i libre_inventory.yml`
 
 Use for your playbooks: `ansible-playbook -i libre_inventory.yml my-playbook.yml`
 
-# Script Installation Configuration 
+# Script Installation and Configuration 
 Install dependencies `pip install unidecode`. 
 Clone repository to a directory.
-Make script executable `chmod +x librenms-inventory-script.py`. Define environmental variables `LIBRENMS_API_URL`, `LIBRENMS_TOKEN`, `LIBRE_GROUP_NAMES_REGEX`. 
+Make script executable `chmod +x librenms-inventory-script.py`. Define environment variables `LIBRENMS_API_URL`, `LIBRENMS_TOKEN`, `LIBRE_GROUP_NAMES_REGEX`. 
 
 Test: `ansible-inventory -v --list -i librenms-inventory-script.py`
 
