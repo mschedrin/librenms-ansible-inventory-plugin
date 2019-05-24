@@ -1,4 +1,4 @@
-#!/bin/env python
+#!/usr/bin/env python
 
 # Created by Mikhail Shchedrin mschedrin@gmail.com
 '''
@@ -94,10 +94,10 @@ def _add_device(device, group_name, output):
                 value = libre_to_ansible_os_mapping.get(value, value)
             hostVars.update({new_property_name: value})
 
-    output['_meta']['hostvars'][hostname] = hostVars
-    output['all']['hosts'].append(hostname)
-    output.setdefault( group_name, { 'hosts': list() } ) #create device group if it does not exist
-    output[group_name]['hosts'].append( hostname ) #add current device to the group
+        output['_meta']['hostvars'][hostname] = hostVars
+        output['all']['hosts'].append(hostname)
+        output.setdefault( group_name, { 'hosts': list() } ) #create device group if it does not exist
+        output[group_name]['hosts'].append( hostname ) #add current device to the group
 
 #process cli args and env variables
 parser = configargparse.ArgParser()
