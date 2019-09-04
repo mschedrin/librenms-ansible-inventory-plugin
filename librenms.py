@@ -219,7 +219,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         update_cache = True
         if cache and not self.cache_force_update: # if cache is enabled and is not forced to be updated
             try:
-                source_data = self.cache.get(cache_key)
+                source_data = self._cache.get(cache_key)
                 update_cache = False
                 print("Got data from cache")
                 #pprint(source_data)
