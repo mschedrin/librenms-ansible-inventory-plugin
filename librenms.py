@@ -15,7 +15,6 @@ DOCUMENTATION = '''
     description:
         - Get inventory hosts from LibreNMS
     extends_documentation_fragment:
-        - constructed
         - inventory_cache
     options:
         plugin:
@@ -49,7 +48,7 @@ DOCUMENTATION = '''
         cache_connection:
             default: /tmp/
         cache_plugin: 
-            default: jsonfile
+            default: pickle
         regex_ignore_case:
             type: bool
             default: True
@@ -62,9 +61,13 @@ DOCUMENTATION = '''
             type: list
             default: []
         timeout:
-            description: Timeout for Netbox requests in seconds
+            description: Timeout for LibreNMS requests in seconds
             type: int
             default: 60
+        verbose:
+            decription: Enable verbose output
+            type: bool
+            default: False
 '''
 
 
@@ -81,6 +84,8 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         'asa': 'asa',
         'ios':'ios',
         'iosxe':'ios' }
+    def _log(self, *args):
+        if self.verbose: print(args[0])
 
     def _http_request(self, url):
         r = requests.get(url, headers=self.headers, verify=self.validate_certs)
@@ -133,8 +138,8 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
             hostname = unidecode(device['libre_sysName'])
         else:
             hostname = device['libre_hostname']
-        #pprint(device)
-        print("Adding host: {}".format(hostname))
+        #self._log(device)
+        self._log("Adding host: {}".format(hostname))
         if not (device['libre_disabled'] > 0 and self.exclude_disabled) or (device['libre_disabled'] == 0):
             self.inventory.add_host(group=group_name, host=hostname)
             self._set_host_variables(hostname, device)
@@ -159,13 +164,13 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         #get devices from groups
         devices = list()
         for grp in device_groups:
-            print("Processing group: "+grp['name'])
+            self._log("Processing group: "+grp['name'])
             #self._add_group(grp['name'])
             source_data['inventory'][grp['name']] = list()
             device_ids_dict = self._get_devices_from_group(grp)
             for device_id_dict in device_ids_dict:
                 #devices.append(self._get_device_by_id(device_id_dict['device_id']))
-                #pprint(device_id_dict)
+                #self._log(device_id_dict)
                 if self.host_name_regex_filter:
                     tmp_dev = self._check_device_match_filters(self._get_device_by_id(device_id_dict['device_id']), self.host_name_regex_filter)
                 else: 
@@ -188,7 +193,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
 
     def parse(self, inventory, loader, path, cache=True):
         # call base method to ensure properties are available for use with other helper methods
-        super(InventoryModule, self).parse(inventory, loader, path, cache)
+        super(InventoryModule, self).parse(inventory, loader, path, cache=cache)
         self.config = self._read_config_data(path=path)
         self.api_endpoint = self.get_option("api_endpoint")
         self.api_token = self.get_option("api_token")
@@ -203,15 +208,16 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         if not self.validate_certs:
             urllib3.disable_warnings()
         self.timeout = self.get_option("timeout")
+        self.verbose = self.get_option("verbose")
         self.headers = { 'X-Auth-Token': self.api_token }
-        print("Plugin configuration:")
-        pprint(self.config)
-        #print(self.group_name_regex_filter)
-        #print(self.host_name_regex_filter)
+        self._log("Plugin configuration:")
+        self._log(self.config)
+        #self._log(self.group_name_regex_filter)
+        #self._log(self.host_name_regex_filter)
 
         cache_key = self.get_cache_key(path)
-        print("Cache location: {}{}".format(self.get_option("cache_connection"),cache_key))
-        print("Plugin path: "+path)
+        self._log("Cache location: {}{}".format(self.get_option("cache_connection"),cache_key))
+        self._log("Plugin path: "+path)
 
         if cache: #if caching enabled globally
             cache = self.get_option('cache') #read cache parameter from plugin config
@@ -221,26 +227,28 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
             try:
                 source_data = self._cache.get(cache_key)
                 update_cache = False
-                print("Got data from cache")
-                #pprint(source_data)
+                self._log("Got data from cache")
+                #self._log(source_data)
             except KeyError:
-                print("Fail reading cache")
+                self._log("Fail reading cache")
                 update_cache = True
         
         #Check that filter saved in cache is the same as current. If they don't match rebuild cache!
         if source_data and cache and not update_cache:
             if self.group_name_regex_filter != source_data['group_name_regex_filter'] or \
                self.host_name_regex_filter != source_data['host_name_regex_filter']:
-                print("Current inventory filters do not match cached data, force cache update")
+                self._log("Current inventory filters do not match cached data, force cache update")
                 update_cache = True
-
+        
         if not source_data or update_cache:
-            print("Don't use cache, get fresh meat from Libre")
+            self._log("Don't use cache, get fresh meat from Libre")
             source_data = self._build_source_data()
-        if cache and update_cache:
-            self.cache.set(cache_key, source_data)
-            print("Cache updated")
-        print("Populate ansible inventory")
+        
+        if cache: 
+            self._cache[cache_key] = source_data
+            self._log("Cache saved to selected storage plugin")
+        
+        self._log("Populate ansible inventory")
         self._populate_ansible_inventory(source_data)
 
 # TODO: fix documentation part to work with ansible: ansible-doc -t inventory librenms
