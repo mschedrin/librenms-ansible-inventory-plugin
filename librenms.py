@@ -46,7 +46,7 @@ DOCUMENTATION = '''
             type: bool
             default: False
         cache_connection:
-            default: /tmp/
+            default: /tmp
         cache_plugin: 
             default: pickle
         regex_ignore_case:
