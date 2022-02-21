@@ -134,7 +134,9 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 self.inventory.set_variable(hostname, variable_name, value)
 
     def _add_device(self, device, group_name):
-        if len(device['libre_sysName']):
+        if device['libre_sysName'] is None:
+            hostname = device['libre_hostname']
+        elif len(device['libre_sysName']):
             hostname = unidecode(device['libre_sysName'])
         else:
             hostname = device['libre_hostname']
