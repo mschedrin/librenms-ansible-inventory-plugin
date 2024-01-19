@@ -1,9 +1,9 @@
-import urllib3, requests, re
-from pprint import pprint
+import urllib3, requests, re, os
 from ansible.module_utils.six.moves.urllib.parse import urljoin
 from ansible.errors import AnsibleError
 from ansible.plugins.inventory import BaseInventoryPlugin, Constructable, Cacheable
 from unidecode import unidecode
+
 
 DOCUMENTATION = '''
     name: librenms
@@ -52,6 +52,10 @@ DOCUMENTATION = '''
         regex_ignore_case:
             type: bool
             default: True
+        group_by:
+            description: Create ansible groups from libre device properties
+            type: str
+            default: ''
         group_name_regex_filter:
             description: Regex filters for group names
             type: list
@@ -79,17 +83,18 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         'libre_hostname': 'ansible_host',
         'os': 'ansible_network_os',
         'libre_os': 'ansible_network_os'
-    } 
+    }
     libre_to_ansible_os_mapping = {
         'asa': 'asa',
         'ios':'ios',
-        'iosxe':'ios' }
+        'iosxe':'ios'}
     def _log(self, *args):
-        if self.verbose: print(args[0])
+        if self.verbose:
+            print(args[0])
 
     def _http_request(self, url):
         r = requests.get(url, headers=self.headers, verify=self.validate_certs)
-        if r.json()['status'] == "error": 
+        if r.json()['status'] == "error":
             #libre returns error if there is zero devices in the group. WTF? Here is workaround:
             if "No devices found in group" in r.json()['message']:
                 return dict()
@@ -100,9 +105,10 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
     def _filter_device_groups(self, device_groups, filters):
         result = list()
         for f in filters:
-            result += [ grp for grp in device_groups['groups'] if re.match(f, grp['name'], self.re_flags)  ]
+            result += [ grp for grp in device_groups['groups'] if \
+                       re.match(f, grp['name'], self.re_flags)  ]
         return result
-    
+
     def _filter_device_hostnames(self, devices, filters):
         result = list()
         for f in filters:
@@ -119,7 +125,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         url = self.api_endpoint+'/devicegroups/'+device_group['name']
         response = self._http_request(url)
         return response.get('devices', list())
-        
+
     def _get_device_by_id(self, device_id):
         url = self.api_endpoint+'/devices/'+str(device_id)
         device = self._http_request(url)
@@ -141,8 +147,9 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         else:
             hostname = device['libre_hostname']
         #self._log(device)
-        self._log("Adding host: {}".format(hostname))
-        if not (device['libre_disabled'] > 0 and self.exclude_disabled) or (device['libre_disabled'] == 0):
+        self._log(f"Adding host: {hostname}")
+        if not (device['libre_disabled'] > 0 and self.exclude_disabled) or \
+            (device['libre_disabled'] == 0):
             self.inventory.add_host(group=group_name, host=hostname)
             self._set_host_variables(hostname, device)
 
@@ -151,7 +158,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         self.inventory.add_group(group_name)
 
     def _build_source_data(self):
-        source_data={ 
+        source_data={
             'host_name_regex_filter': self.host_name_regex_filter,
             'group_name_regex_filter': self.group_name_regex_filter,
             'inventory': {} }
@@ -159,36 +166,41 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         url = self.api_endpoint+'/devicegroups'
         all_device_groups = self._http_request(url)
         if self.group_name_regex_filter:
-            device_groups = self._filter_device_groups(all_device_groups, self.group_name_regex_filter)
+            device_groups = self._filter_device_groups(all_device_groups, \
+                                                       self.group_name_regex_filter)
         else: 
             device_groups = all_device_groups['groups']
-        
+
         #get devices from groups
-        devices = list()
         for grp in device_groups:
             self._log("Processing group: "+grp['name'])
-            #self._add_group(grp['name'])
-            source_data['inventory'][grp['name']] = list()
             device_ids_dict = self._get_devices_from_group(grp)
             for device_id_dict in device_ids_dict:
-                #devices.append(self._get_device_by_id(device_id_dict['device_id']))
-                #self._log(device_id_dict)
                 if self.host_name_regex_filter:
-                    tmp_dev = self._check_device_match_filters(self._get_device_by_id(device_id_dict['device_id']), self.host_name_regex_filter)
-                else: 
+                    tmp_dev = self._check_device_match_filters(\
+                        self._get_device_by_id(device_id_dict['device_id']), \
+                            self.host_name_regex_filter)
+                else:
                     tmp_dev = self._get_device_by_id(device_id_dict['device_id'])
-                if tmp_dev: 
+                if tmp_dev:
                     #prefix keys with 'libre_'
                     prefixed_tmp_dev = dict( ('libre_'+key, val) for key,val in tmp_dev.items() )
                     #save filter parameters on each host variable
                     prefixed_tmp_dev['inventory_group_name_regex_filter'] = (self.group_name_regex_filter)
                     prefixed_tmp_dev['inventory_host_name_regex_filter'] = (self.host_name_regex_filter)
-                    source_data['inventory'][grp['name']].append(prefixed_tmp_dev)
+                    if self.group_by:
+                        # Set empty list for group if it doesn't exist
+                        source_data['inventory'].setdefault(tmp_dev[self.group_by], list())
+                        source_data['inventory'][tmp_dev[self.group_by]].append(prefixed_tmp_dev)
+                    else:
+                        source_data['inventory'].setdefault(grp['name'], list())
+                        source_data['inventory'][grp['name']].append(prefixed_tmp_dev)
         return source_data
 
     def _populate_ansible_inventory(self, source_data):
         inventory = source_data['inventory']
         for group_name, hosts in inventory.items():
+            print("Processing group: "+group_name)
             self._add_group(group_name) # add group to ansible
             for host in hosts:
                 self._add_device(host, group_name)
@@ -198,13 +210,15 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         super(InventoryModule, self).parse(inventory, loader, path, cache=cache)
         self.config = self._read_config_data(path=path)
         self.api_endpoint = self.get_option("api_endpoint")
-        self.api_token = self.get_option("api_token")
+        self.api_token = self.get_option("api_token") if self.get_option("api_token") \
+            else os.getenv('LIBRENMS_TOKEN')
         self.validate_certs = self.get_option("validate_certs")
+        self.group_by = self.get_option("group_by")
         self.group_name_regex_filter = self.get_option("group_name_regex_filter")
         self.host_name_regex_filter = self.get_option("host_name_regex_filter")
         self.exclude_disabled = self.get_option("exclude_disabled")
         self.cache_force_update = self.get_option("cache_force_update")
-        if self.get_option("regex_ignore_case"): 
+        if self.get_option("regex_ignore_case"):
             self.re_flags = re.IGNORECASE
 
         if not self.validate_certs:
@@ -218,7 +232,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         #self._log(self.host_name_regex_filter)
 
         cache_key = self.get_cache_key(path)
-        self._log("Cache location: {}{}".format(self.get_option("cache_connection"),cache_key))
+        self._log(f"Cache location: {self.get_option('cache_connection')}{cache_key}")
         self._log("Plugin path: "+path)
 
         if cache: #if caching enabled globally
@@ -234,26 +248,25 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
             except KeyError:
                 self._log("Fail reading cache")
                 update_cache = True
-        
+
         #Check that filter saved in cache is the same as current. If they don't match rebuild cache!
         if source_data and cache and not update_cache:
             if self.group_name_regex_filter != source_data['group_name_regex_filter'] or \
                self.host_name_regex_filter != source_data['host_name_regex_filter']:
                 self._log("Current inventory filters do not match cached data, force cache update")
                 update_cache = True
-        
+
         if not source_data or update_cache:
             self._log("Don't use cache, get fresh meat from Libre")
             source_data = self._build_source_data()
-        
-        if cache: 
+
+        if cache:
             self._cache[cache_key] = source_data
             self._log("Cache saved to selected storage plugin")
-        
+
         self._log("Populate ansible inventory")
         self._populate_ansible_inventory(source_data)
 
 # TODO: fix documentation part to work with ansible: ansible-doc -t inventory librenms
-# TODO: group by option to create ansible-groups from libre device properties
 # TODO: evaluate composited vars: self._set_composite_vars function, see example in netbox inventory plugin
 #https://github.com/ansible/ansible/blob/devel/lib/ansible/plugins/inventory/netbox.py
